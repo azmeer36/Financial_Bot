@@ -52,28 +52,44 @@ def get_vectorstore(docs):
     
     vectorstore_from_docs = PineconeVectorStore.from_documents(
         docs,
-        index_name="fibot",
+        index_name="finbot",
         embedding=embeddings
     )
+
+    # vectorstore_from_docs = PineconeVectorStore.add_documents(documents=docs, embedding=embeddings)
+
+    # vectorstore_from_docs = []
     
     return vectorstore_from_docs
 
 
-def get_conversation_chain(vectorstore):
+def get_conversation_chain():
+    embeddings = OpenAIEmbeddings()
+
+    
+
+
     llm = ChatOpenAI()
     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
-
+    # print("Type of retriever:", type(vectorstore.as_retriever()))
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True)
+    
+    docsearch = PineconeVectorStore.from_existing_index(index_name="finbot", embedding=embeddings)
+    
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=vectorstore.as_retriever(),
+        retriever=docsearch.as_retriever(),
         memory=memory
     )
+   
     return conversation_chain
 
 
 def handle_userinput(user_question):
+    st.session_state.conversation = get_conversation_chain()
+    # print("user_question", user_question)
+    # print("conversation", st.session_state.conversation)
     response = st.session_state.conversation({'question': user_question})
     st.session_state.chat_history = response['chat_history']
 
@@ -123,7 +139,8 @@ def main():
 
                 # create vector store
                 # vectorstore = get_vectorstore(text_chunks)
-                vectorstore = get_vectorstore(text_chunks)
+                # vectorstore = get_vectorstore(text_chunks)
+                get_vectorstore(text_chunks)
 
                 # pc = Pinecone(api_key="147350ef-5846-457f-85e7-55f6bf459f85")
                 # index = pc.Index("financialbot")
@@ -137,8 +154,8 @@ def main():
                 
 
                 # create conversation chain
-                st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+                # st.session_state.conversation = get_conversation_chain(
+                #     vectorstore, text_chunks)
 
 
 if __name__ == '__main__':
