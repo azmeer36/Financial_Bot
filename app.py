@@ -14,14 +14,12 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import css, bot_template, user_template
 from pinecone import Pinecone, ServerlessSpec
-
 from langchain import PromptTemplate
 from langchain.prompts.chat import ChatPromptTemplate,SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
 
 from langchain.docstore.document import Document
 # from psx import tickers
 # import datetime 
-
 
 load_dotenv()
 # Initialize Pinecone client
