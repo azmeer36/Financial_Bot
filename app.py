@@ -1,5 +1,6 @@
 from http import client
 import pinecone
+import json
 import os
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,12 +15,12 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import css, bot_template, user_template
 from pinecone import Pinecone, ServerlessSpec
-from langchain import PromptTemplate
-from langchain.prompts.chat import ChatPromptTemplate,SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
-
+import yfinance as yf
+import matplotlib.pyplot as plt
 from langchain.docstore.document import Document
-# from psx import tickers
-# import datetime 
+# from psx import stocks, tickers
+import datetime 
+
 
 load_dotenv()
 # Initialize Pinecone client
@@ -59,70 +60,39 @@ def get_vectorstore(docs):
         embedding=embeddings
     )
 
-    # vectorstore_from_docs = PineconeVectorStore.add_documents(documents=docs, embedding=embeddings)
-
-    # vectorstore_from_docs = []
-    
     return vectorstore_from_docs
 
 
 def get_conversation_chain():
     embeddings = OpenAIEmbeddings()
 
-    
-    # financial_prompt = ChatPromptTemplate.from_messages([
-    #         SystemMessagePromptTemplate.from_template(
-    #             "The following is an informative conversation between a human and an AI financial adviser. The financial adviser will ask lots of questions. The financial adviser will attempt to answer any question asked and will probe for the human's risk appetite by asking questions of its own. If the human's risk appetite is low it will offer conservative financial advice, if the risk appetite of the human is higher it will offer more aggressive advice "
-    #         ),
-    #     ])
-
-    # llm = ChatOpenAI()
-    # # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
-    # # print("Type of retriever:", type(vectorstore.as_retriever()))
-    # memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)
-    # print("memory is: ", memory)
     vectorstore = PineconeVectorStore.from_existing_index(index_name="fibot", embedding=embeddings)
     
-    # conversation_chain = ConversationalRetrievalChain.from_llm(
-    #     llm=llm,
-    #     retriever=docsearch.as_retriever(),
-    #     memory=memory
-    # )
-   
-    # return conversation_chain
-    llm = ChatOpenAI()
+    llm = ChatOpenAI(model="gpt-3.5-turbo-0125")
     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
 
+    llm_with_tools= llm.bind_tools([get_stock_price, calculate_EMA,calculate_MACD,calculate_RSI,calculate_SMA,plot_stock_price])
+    
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True)
-    
-    
     conversation_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
+        llm=llm_with_tools,
         retriever=vectorstore.as_retriever(),
-        memory=memory
+        memory=memory,
+        # functions = functions,
+        # function_call = 'auto'
     )
-    
-    sys_prompt = "You are an AI financial adviser named Finley. You will attempt to answer any question asked and will probe for the human's risk appetite by asking questions of its own. If the human's risk appetite is low you will offer conservative financial advice, if the risk appetite of the human is higher you will offer more aggressive advice"
-    conversation_chain.combine_docs_chain.llm_chain.prompt.messages[0] = SystemMessagePromptTemplate.from_template( sys_prompt)
-    
     return conversation_chain
 
 def submit():
     st.session_state.something = st.session_state.widget
     st.session_state.widget = ''
 
-
 def handle_userinput(user_question):
-    # st.session_state.conversation = get_conversation_chain()
-    # print("user_question", user_question)
-    # print("conversation", st.session_state.conversation)
-    
     response = st.session_state.conversation({'question': user_question})
-    # print("response is: ", response)
+    print("response", response)
+    
     st.session_state.chat_history = response['chat_history']
-
-    # print("chat history is: ", st.session_state.chat_history)
 
     for i, message in enumerate(st.session_state.chat_history):
         if i % 2 == 0:
@@ -131,52 +101,177 @@ def handle_userinput(user_question):
         else:
             st.write(bot_template.replace(
                 "{{MSG}}", message.content), unsafe_allow_html=True)
+
             
+# real time data
+def get_stock_price(ticker):
+    return str(yf.Ticker(ticker).history(period='1y').iloc[-1].Close)
 
-# def get_data():
-#     ticker_list = tickers()
-#     # data = stocks("SILK", start=datetime.date(2020, 1, 1), end=datetime.date.today())
-#     print(ticker_list)
-#     # print(data)
+def calculate_SMA(ticker, window):
+    data = yf.Ticker(ticker).history(period='1y').Close
+    return str(data.rolling(window=window).mean().iloc[-1])
+
+def calculate_EMA(ticker, window):
+    data = yf.Ticker(ticker).history(period='1y').Close
+    return str(data.ewm(span=window, adjust=False).mean().iloc[-1])
+
+def calculate_RSI(ticker):
+    data = yf.Ticker(ticker).history(period='1y').Close
+    delta = data.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    ema_up = up.ewm(com=14-1, adjust=False).mean()
+    ema_down = down.ewm(com=14-1, adjust=False).mean()
+    rs = ema_up / ema_down
+    return str(100 - (100 / (1+rs)).iloc[-1])
+
+def calculate_MACD(ticker):
+    data = yf.Ticker(ticker).history(period='1y').Close
+    short_EMA = data.ewm(span=12, adjust=False).mean()
+    long_EMA = data.ewm(span=26, adjust=False).mean()
+    macd = short_EMA - long_EMA
+    signal = macd.ewm(span=9, adjust=False).mean()
+    macd_histogram = macd-signal
+    return f'{macd[-1]}, {signal[-1]}, {macd_histogram[-1]}'
+
+def plot_stock_price(ticker):
+    data = yf.Ticker(ticker).history(period='1y')
+    plt.figure(figsize=(10, 5))
+    plt.plot(data.index, data.Close)
+    plt.title(f'{ticker} Stock Price Over Last Year')
+    plt.xlabel('Date')
+    plt.ylabel('Stock Price ($)')
+    plt.grid(True)
+    plt.savefig('stock.png')
+    plt.close()
 
 
+functions =  [
+    {
+      "name": "get_stock_price",
+      "description": "Gets the latest stock price given the ticker symbol of a company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          }
+        },
+        "required": ["ticker"]
+      }
+    },
+    {
+      "name": "calculate_SMA",
+      "description": "Calculate the simple moving average for a given stock ticker and a window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          },
+          "window": {
+            "type": "integer",
+            "description": "The timeframe to consider when calculating the SMA."
+          }
+        },
+        "required": ["ticker", "window"]
+      }
+    },
+    {
+      "name": "calculate_EMA",
+      "description": "Calculate the exponential moving average for a given stock ticker and a window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          },
+          "window": {
+            "type": "integer",
+            "description": "The timeframe to consider when calculating the EMA."
+          }
+        },
+        "required": ["ticker", "window"]
+      }
+    },
+    {
+      "name": "calculate_RSI",
+      "description": "Calculate the RSI for a given stock ticker.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          },
+        },
+        "required": ["ticker"]
+      }
+    },
+    {
+      "name": "calculate_MACD",
+      "description": "Calculate the MACD for a given stock ticker",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          },
+        },
+        "required": ["ticker"]
+      }
+    },
+    {
+      "name": "plot_stock_price",
+      "description": "Plot the stock price for the last year given the ticker symbol of a company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "The stock ticker symbol for a company (e.g., AAPL for Apple)."
+          }
+        },
+        "required": ["ticker"]
+      }
+    }
+  ]
+
+available_functions= {
+    'get_stock_price': get_stock_price,
+    'calculate_SMA': calculate_SMA,
+    'calculate_EMA': calculate_EMA,
+    'calculate_RSI': calculate_RSI,
+    'calculate_MACD': calculate_MACD,
+    'plot_stock_price': plot_stock_price,
+}
+            
 def main():
-    # get_data()
-   
-    # print("I am here againnnnnnnnnnnnnnnnnnnnnnnnnnnn")
-    # st.session_state.conversation = get_conversation_chain()
-    
-    
-    # pc = Pinecone(api_key="147350ef-5846-457f-85e7-55f6bf459f85")
-    # index = pc.Index("financialbot")
-
-    # print(index.describe_index_stats())
-
-    # index.upsert(vectors=to_upsert)
-    
     load_dotenv()
     st.set_page_config(page_title="Chat with multiple PDFs",
                        page_icon=":books:")
     st.write(css, unsafe_allow_html=True)
 
     if "conversation" not in st.session_state:
-        
         st.session_state.conversation = get_conversation_chain()
     if "chat_history" not in st.session_state:
-        
         st.session_state.chat_history = None
+    if 'messages' not in st.session_state:
+        st.session_state['messages']= []
 
-
-    st.header("Chat with Finley :dollar:")
-    user_question = st.text_input("Ask a questions on financials:")
+    st.header("Chat with multiple PDFs :books:")
+    user_question = st.text_input("Ask a question about your documents:")
     if user_question:
         handle_userinput(user_question)
-
 
     with st.sidebar:
         st.subheader("Your documents")
         pdf_docs = st.file_uploader(
-            "Upload your neccessary documents here and click on 'Process'", accept_multiple_files=True)
+            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
         if st.button("Process"):
             with st.spinner("Processing"):
                 # get pdf text
@@ -186,24 +281,8 @@ def main():
                 text_chunks = get_text_chunks(raw_text)
 
                 # create vector store
-                # vectorstore = get_vectorstore(text_chunks)
                 vectorstore = get_vectorstore(text_chunks)
-                # get_vectorstore(text_chunks)
-
-                # pc = Pinecone(api_key="147350ef-5846-457f-85e7-55f6bf459f85")
-                # index = pc.Index("financialbot")
-
-                # print(index.describe_index_stats())
-
-                # vectors_with_ids = [(f"id_{i}", vector) for i, vector in enumerate(query_result)]
-
-                # index.upsert(vectors=vectors_with_ids)
-
                 
-
-                # create conversation chain
-                # st.session_state.conversation = get_conversation_chain(
-                #     vectorstore)
 
 
 if __name__ == '__main__':

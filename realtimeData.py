@@ -12,7 +12,19 @@ load_dotenv()
 api_key= os.getenv('OPENAI_API_KEY')
 
 client = OpenAI(api_key=api_key)
-print(client)
+
+def get_batch_stock_quotes(ticker): 
+    prices = []
+    for ticker in ticker:
+        try:
+            # Fetch the historical data for the last year
+            close_price = yf.Ticker(ticker).history(period='1y').iloc[-1].Close
+            prices.append(f"{ticker}: {close_price}")
+        except Exception as e:
+            # If there's an error (e.g., no data available), record it
+            prices.append(f"{ticker}: Error fetching price")
+    # Join all ticker prices into a single string
+    return '\n'.join(prices)
 
 def get_stock_price(ticker):
     return str(yf.Ticker(ticker).history(period='1y').iloc[-1].Close)
@@ -148,6 +160,26 @@ functions =  [
         },
         "required": ["ticker"]
       }
+    },
+    {
+      "name": "get_batch_stock_quotes",
+      "description": "Retrieves the latest stock prices for a list of ticker symbols using yfinance and returns them as a formatted string.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A list of stock ticker symbols (e.g., ['AAPL', 'MSFT', 'GOOGL'])."
+          }
+        }
+      },
+      "returns": {
+        "type": "string",
+        "description": "A string with each ticker symbol and its corresponding price, formatted for easy reading (e.g., 'AAPL: $150, MSFT: $250')."
+      }
     }
   ]
 
@@ -158,6 +190,7 @@ available_functions= {
     'calculate_RSI': calculate_RSI,
     'calculate_MACD': calculate_MACD,
     'plot_stock_price': plot_stock_price,
+    'get_batch_stock_quotes': get_batch_stock_quotes,
 }
 
 if 'messages' not in st.session_state:
@@ -178,18 +211,19 @@ if user_input:
         )
         
         response_message =  response.choices[0].message
-        print(response_message)
+        print("response message: ", response_message)
         
         if response_message.function_call:
             function_name = response_message.function_call.name
             function_args = json.loads(response_message.function_call.arguments)
 
-            if function_name in ['get_stock_price', 'calculate_RSI', 'calculate_MACD', 'plot_stock_price']:
+            if function_name in ['get_stock_price', 'calculate_RSI', 'calculate_MACD', 'plot_stock_price', 'get_batch_stock_quotes']:
                 args_dict = {'ticker': function_args.get('ticker')}
             elif function_name in ['calculate_SMA', 'calculate_EMA']:
                 args_dict = {'ticker': function_args.get('ticker'), 'window': function_args.get('window')}
 
             function_to_call = available_functions[function_name]
+            print(function_to_call)
             function_response = function_to_call(**args_dict)
 
             if function_name == 'plot_stock_price':
