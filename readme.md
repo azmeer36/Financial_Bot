@@ -33,16 +33,15 @@ You can access the deployed app at: [Deployed App Link](https://financialbot-fin
     ```bash
     pip install -r requirements.txt
     
-3. **Set up environment variables**:
+3. **Set up environment variables:**
 
-  Create a .env file in the root directory and add your API keys for OpenAI and Pinecone:
-
+  Create a .env file in the root directory and add your API keys for OpenAI and Pinecone
   ```bash
   OPENAI_API_KEY=your_openai_api_key
   PINECONE_API_KEY=your_pinecone_api_key
   ```
 
-4. **Run the application**:
+4. **Run the application:**
   ```bash
   streamlit run app.py
   ```
