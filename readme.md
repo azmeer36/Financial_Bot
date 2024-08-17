@@ -15,6 +15,10 @@ This project implements a stock analysis chatbot that provides various functiona
 - **Stock Price Plotting:** Plot the stock price for the last year given the ticker symbol of a company.
 - **Batch Stock Quotes Retrieval:** Retrieves the latest stock prices for a list of ticker symbols and returns them as a formatted string.
 - **Investment Advice Generation:** Gives investment advice by analyzing dividend rates, return on equity, and PEG ratios of specified stocks.
+
+## Deployed App
+
+You can access the deployed app at: [Deployed App Link](https://financialbot-finley.streamlit.app/)
   
 ![Screenshot (89)](https://github.com/user-attachments/assets/4a43291e-ae08-42ab-9c31-8de8e4e7ac1f)
 
